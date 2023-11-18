@@ -1,0 +1,3 @@
+package fstalk
+
+object RenderInsert {}

@@ -9,16 +9,10 @@ import zio._
 import zio.schema.meta.Migration._
 import zio.schema.StandardType._
 import java.time._
+import scala.annotation.implicitNotFound
 
-/** insertInto(users)(id, email, validated) .values(
-  * ("deb68414-8575-11ee-b9d1-0242ac120002", "someone@gmail.com", true),
-  * ("e1f5598e-8575-11ee-b9d1-0242ac120002", "someoneelse@gmail.com", false) )
-  *
-  * INSERT INTO users (id, email, validated) VALUES
-  * ("deb68414-8575-11ee-b9d1-0242ac120002", "someone@gmail.com", true),
-  * ("e1f5598e-8575-11ee-b9d1-0242ac120002", "someoneelse@gmail.com", false);
+/** Type-safe checks of structure
   */
-// + type safe derivation?
 object InsertExample {
 
   sealed trait ColumnType[A]
@@ -30,13 +24,13 @@ object InsertExample {
     implicit case object LocalDateType extends ColumnType[LocalDate]
   }
 
-  sealed trait Column[KeyValue] { self =>
-    type Key <: Singleton with String
-    type Value
+  sealed trait Column[NameType] { self =>
+    type Name <: Singleton with String
+    type CType
 
-    def columnName: Key
+    def columnName: Name
 
-    def paramType: ColumnType[Value]
+    def paramType: ColumnType[CType]
   }
 
   object Column {
@@ -44,8 +38,8 @@ object InsertExample {
         name0: N
     )(implicit paramType0: ColumnType[T]): Column[(N, T)] =
       new Column[(N, T)] {
-        type Key = N
-        type Value = T
+        type Name = N
+        type CType = T
         def columnName: N = name0
         def paramType: ColumnType[T] = paramType0
       }
@@ -69,12 +63,12 @@ object InsertExample {
   }
 
   final case class ColumnSet[+Columns](
-      private val chunk: Chunk[Column[_]]
+      val columns: Chunk[Column[_]]
   ) { self =>
     def ++[C](
         column: Column[C]
     ): ColumnSet[Columns with C] =
-      new ColumnSet(chunk = chunk :+ column)
+      new ColumnSet(columns = columns :+ column)
 
     def table[TableName0 <: Singleton with String](tableName: TableName0) =
       new Table(tableName, self)
@@ -87,52 +81,82 @@ object InsertExample {
 
   def insertInto[TableName <: Singleton with String, Columns](
       table: Table[TableName, Columns]
-  )(
-      columns: ColumnSet[Columns]
-  ) = InsertBuilder(table, columns)
+  ) = InsertBuilder(table)
 
   final case class InsertBuilder[TableName <: Singleton with String, Columns](
-      table: Table[TableName, Columns],
-      sources: ColumnSet[Columns]
+      table: Table[TableName, Columns]
   ) {
 
     def values[A](values: List[A])(implicit
-        schema: Schema[A] // Schema[User]
+        schema: Schema[A], 
+        validInsert: ValidInsert[A, Columns]
     ): Insert[TableName, Columns, A] =
-      Insert(table, sources, values)
+      Insert(table, values)
   }
 
-  sealed case class Insert[TableType <: Singleton with String, Columns, A](
+  final case class Insert[TableType <: Singleton with String, Columns, A](
       table: Table[TableType, Columns],
-      sources: ColumnSet[Columns],
       values: List[A]
   )(implicit schema: Schema[A])
-
-  sealed trait SchemaValidity[A]
-
-  object SchemaValidity {
-    implicit def valid[A]: SchemaValidity[A] =
-      new SchemaValidity[A] {}
-  }
 
   val id = Column.uuid("id")
   val email = Column.string("email")
   val validated = Column.boolean("validated")
-
-  // ColumnSet[("id", UUID) with ("email", String) with ("validated", Boolean)]
   val columnSet = id ++ email ++ validated
 
-  // Table[String("users"),("id", UUID) with ("email", String) with ("validated", Boolean)]
-  val users = columnSet.table("users")
+  val users: Table[
+    "users",
+    ("id", UUID) with ("email", String) with ("validated", Boolean)
+  ] =
+    columnSet.table("users")
 
   final case class User(id: UUID, email: String, validated: Boolean)
+
+  // Schema.CaseClass3.WithFields["id", "email", "validated", UUID, String, Boolean, User]
   implicit val userSchema = DeriveSchema.gen[User]
 
-  insertInto(users)(id ++ email ++ validated)
+  // if you add age: Int to user you would get an error:
+  // Error Could not validate that case class fields User match columns ("id", java.util.UUID) with ("email", String) with ("validated", Boolean)
+  insertInto(users)
     .values(
       List(
         User(UUID.randomUUID(), "someone@gmail.com", true),
         User(UUID.randomUUID(), "someoneelse@gmail.com", false)
       )
     )
+}
+
+// Schema[A] ==  Schema.CaseClass3.WithFields["id","email","validated",UUID,String,Boolean,User]
+// Columns  == ("id", UUID) with ("email", String) with ("validated", Boolean)
+@implicitNotFound(
+  "Could not validate that case class fields ${A} match columns ${Columns}"
+)
+sealed trait ValidInsert[A, Columns]
+
+object ValidInsert {
+  implicit def validateCaseClass3[
+      A,
+      Columns,
+      Field1 <: Singleton with String,
+      Field2 <: Singleton with String,
+      Field3 <: Singleton with String,
+      Type1,
+      Type2,
+      Type3
+  ](implicit
+      schema: Schema.CaseClass3.WithFields[
+        Field1,
+        Field2,
+        Field3,
+        Type1,
+        Type2,
+        Type3,
+        A
+      ],
+      evidence: Columns =:= (Field1, Type1) with (Field2, Type2) with (
+          Field3,
+          Type3
+      )
+  ): ValidInsert[A, Columns] =
+    new ValidInsert[A, Columns] {}
 }

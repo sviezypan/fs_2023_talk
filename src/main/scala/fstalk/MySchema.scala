@@ -1,5 +1,8 @@
 package fstalk
 
+/**
+  * Schema basics
+  */
 object MySchema {
 
   case class Person(name: String, age: Int)

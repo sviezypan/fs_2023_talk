@@ -96,7 +96,6 @@ object RenderInsert extends ZIOAppDefault {
     def renderDynamic(dynamicValue: DynamicValue): String = 
         dynamicValue match {
             case DynamicValue.Record(_, values) => {
-
                 val rendered = values.map {
                     case (_, v) => renderDynamic(v)
                 }.mkString(", ")
@@ -106,7 +105,6 @@ object RenderInsert extends ZIOAppDefault {
             case DynamicValue.Primitive(v, standardType)    => renderPrimitiveValue(v, standardType)
             case DynamicValue.Tuple(left, right) => s"${renderDynamic(left)}, ${renderDynamic(right)}"
             case DynamicValue.SomeValue(value)   => renderDynamic(value)
-            case DynamicValue.NoneValue          => ""
             case _ => ""
         }
 
@@ -117,11 +115,11 @@ object RenderInsert extends ZIOAppDefault {
 
   def renderPrimitiveValue[A](v: A, standardType: StandardType[A]): String = 
     standardType match {
+       case StringType => s"'${v}'"
        case UUIDType =>  s"'${v.toString()}'"
        case LocalDateType => s"${DateTimeFormatter.ISO_DATE_TIME.format(v)}"
        case BoolType => s"${v}"
        case IntType => s"${v}"
-       case StringType => s"'${v}'"
        case _ => s"${v}"
     }
 

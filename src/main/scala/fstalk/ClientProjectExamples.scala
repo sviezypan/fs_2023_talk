@@ -15,6 +15,7 @@ import zio.schema.annotation.validate
 import zio.schema.codec.JsonCodec
 import zio.Chunk
 import scala.language.postfixOps
+import zio.schema.optics.ZioOpticsBuilder
 
 /** Type class derivation like with Magnolia
   *
@@ -225,13 +226,29 @@ object DerivedSerialization extends ZIOAppDefault {
 
       _ <- ZIO.debug("Person        : " + person)
 
-      //   personDTO <- ZIO.fromEither(
-      //     JsonCodec
-      //       .schemaBasedBinaryCodec[PersonDTO](personDTOSchema)
-      //       .decode(chunks)
-      //   )
-      //   _ <- ZIO.debug("PersonDTO     : " + personDTO)
-
     } yield ()
+}
 
+object OpticsExample extends ZIOSpecDefault {
+  final case class User(name: String, age: Int, address: Address)
+  final case class Address(street: String, city: String, state: String)
+
+  val userSchema = DeriveSchema.gen[User]
+  val addressSchema = DeriveSchema.gen[Address]
+
+  def spec: Spec[TestEnvironment with Scope, Any] =
+    suite("optic suite")(
+      test("test changing user's street addresss") {
+        val user = User("Jaro", 32, Address("Slovenska", "Hawaii", "Slovakia"))
+        val addressAccessor = userSchema.makeAccessors(ZioOpticsBuilder)._3
+        val streetAccessor = addressSchema.makeAccessors(ZioOpticsBuilder)._1
+        val changedUser = (addressAccessor >>> streetAccessor).setOptic(
+          "Hviezdoslavova"
+        )(user)
+
+        println(changedUser)
+
+        assertTrue(changedUser.map(_.address.street) == Right("Hviezdoslavova"))
+      }
+    )
 }

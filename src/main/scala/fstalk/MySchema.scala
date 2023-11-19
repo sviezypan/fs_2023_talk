@@ -7,7 +7,7 @@ object MySchema {
 
   case class Person(name: String, age: Int)
 
-  final case class CaseClass2[A1, A2, Z](
+  final case class CaseClass[A1, A2, Z](
       name: String,
       field1: Field[A1, Z],
       field2: Field[A2, Z],
@@ -28,7 +28,7 @@ object MySchema {
     case object IntType extends PrimitiveType[Int]
   }
 
-  CaseClass2[String, Int, Person](
+  CaseClass[String, Int, Person](
     name = "Person",
     field1 = Field[String, Person](
       "name",
